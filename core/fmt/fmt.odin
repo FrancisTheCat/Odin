@@ -1086,7 +1086,7 @@ _fmt_int :: proc(fi: ^Info, u: u64, base: int, is_signed: bool, bit_size: int, d
 
 		case 12:
 			io.write_byte(fi.writer, '0', &fi.n)
-			io.write_byte(fi.writer, 'o', &fi.n)
+			io.write_byte(fi.writer, 'z', &fi.n)
 			start = 2
 
 		case 16:
@@ -1100,10 +1100,7 @@ _fmt_int :: proc(fi: ^Info, u: u64, base: int, is_signed: bool, bit_size: int, d
 	if fi.prec_set {
 		prec = fi.prec
 		if prec == 0 && u == 0 {
-			prev_zero := fi.zero
-			fi.zero = false
 			fmt_write_padding(fi, fi.width)
-			fi.zero = prev_zero
 			return
 		}
 	} else if fi.zero && fi.width_set {
@@ -1171,7 +1168,7 @@ _fmt_int_128 :: proc(fi: ^Info, u: u128, base: int, is_signed: bool, bit_size: i
 
 		case 12:
 			io.write_byte(fi.writer, '0', &fi.n)
-			io.write_byte(fi.writer, 'o', &fi.n)
+			io.write_byte(fi.writer, 'z', &fi.n)
 			start = 2
 
 		case 16:
@@ -1185,10 +1182,7 @@ _fmt_int_128 :: proc(fi: ^Info, u: u128, base: int, is_signed: bool, bit_size: i
 	if fi.prec_set {
 		prec = fi.prec
 		if prec == 0 && u == 0 {
-			prev_zero := fi.zero
-			fi.zero = false
 			fmt_write_padding(fi, fi.width)
-			fi.zero = prev_zero
 			return
 		}
 	} else if fi.zero && fi.width_set {
@@ -1231,8 +1225,8 @@ _fmt_int_128 :: proc(fi: ^Info, u: u128, base: int, is_signed: bool, bit_size: i
 	_pad(fi, s)
 }
 // Units of measurements:
-__MEMORY_LOWER := " b kib mib gib tib pib eib"
-__MEMORY_UPPER := " B KiB MiB GiB TiB PiB EiB"
+@(rodata) __MEMORY_LOWER := " b kib mib gib tib pib eib"
+@(rodata) __MEMORY_UPPER := " B KiB MiB GiB TiB PiB EiB"
 // Formats an integer value as bytes with the best representation.
 //
 // Inputs:
@@ -1290,8 +1284,8 @@ _fmt_memory :: proc(fi: ^Info, u: u64, is_signed: bool, bit_size: int, units: st
 	_pad(fi, str)
 }
 // Hex Values:
-__DIGITS_LOWER := "0123456789abcdefx"
-__DIGITS_UPPER := "0123456789ABCDEFX"
+@(rodata) __DIGITS_LOWER := "0123456789abcdefx"
+@(rodata) __DIGITS_UPPER := "0123456789ABCDEFX"
 // Formats a rune value according to the specified formatting verb.
 //
 // Inputs:
@@ -2131,6 +2125,63 @@ __handle_raw_union_tag :: proc(fi: ^Info, v: any, the_verb: rune, info: runtime.
 				if tail_name == tag_string {
 					io.write_string(fi.writer, "#raw_union(.", &fi.n)
 					io.write_string(fi.writer, tag_string, &fi.n)
+					io.write_string(fi.writer, ") ", &fi.n)
+					fmt_arg(fi, any{v.data, info.types[index].id}, the_verb)
+					return true
+				}
+			}
+		}
+	case reflect.Type_Info_Integer:
+		tag_value := reflect.as_i64(tag) or_break
+
+		for tag, index in info.tags[:info.field_count] {
+			rut_list := reflect.struct_tag_lookup(reflect.Struct_Tag(tag), "raw_union_tag") or_continue
+
+			for rut in strings.split_iterator(&rut_list, ",") {
+				head_tag, match, tail_name := strings.partition(string(rut), "=")
+				if head_tag != tag_name || match != "=" {
+					continue
+				}
+
+				// just ignore the `A.` prefix for `A.B` stuff entirely
+				if _, _, try_tail_name := strings.partition(string(rut), "."); try_tail_name != "" {
+					tail_name = try_tail_name
+				}
+
+				tail_value := strconv.parse_i64(tail_name) or_continue
+
+				if tail_value == tag_value {
+					io.write_string(fi.writer, "#raw_union(.", &fi.n)
+					io.write_i64(fi.writer, tag_value, 10, &fi.n)
+					io.write_string(fi.writer, ") ", &fi.n)
+					fmt_arg(fi, any{v.data, info.types[index].id}, the_verb)
+					return true
+				}
+			}
+		}
+
+	case reflect.Type_Info_Boolean:
+		tag_value := reflect.as_bool(tag) or_break
+
+		for tag, index in info.tags[:info.field_count] {
+			rut_list := reflect.struct_tag_lookup(reflect.Struct_Tag(tag), "raw_union_tag") or_continue
+
+			for rut in strings.split_iterator(&rut_list, ",") {
+				head_tag, match, tail_name := strings.partition(string(rut), "=")
+				if head_tag != tag_name || match != "=" {
+					continue
+				}
+
+				// just ignore the `A.` prefix for `A.B` stuff entirely
+				if _, _, try_tail_name := strings.partition(string(rut), "."); try_tail_name != "" {
+					tail_name = try_tail_name
+				}
+
+				tail_value := strconv.parse_bool(tail_name) or_continue
+
+				if tail_value == tag_value {
+					io.write_string(fi.writer, "#raw_union(.", &fi.n)
+					io.write_string(fi.writer, "true" if tag_value else "false", &fi.n)
 					io.write_string(fi.writer, ") ", &fi.n)
 					fmt_arg(fi, any{v.data, info.types[index].id}, the_verb)
 					return true
